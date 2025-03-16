@@ -9,21 +9,23 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/net/context"
 )
 
-// Item 구조체 (스크래퍼와 동일)
+// Item 구조체
 type Item struct {
-	Title       string    `json:"title" bson:"title"`
-	Description string    `json:"description" bson:"description"`
-	URL         string    `json:"url" bson:"url"`
-	Image       string    `json:"image" bson:"image"`
-	Price       string    `json:"price" bson:"price"`
-	Source      string    `json:"source" bson:"source"`
-	Category    string    `json:"category" bson:"category"`
-	CreatedAt   time.Time `json:"created_at" bson:"created_at"`
+	ID          primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Title       string             `json:"title" bson:"title"`
+	Description string             `json:"description" bson:"description"`
+	URL         string             `json:"url" bson:"url"`
+	Image       string             `json:"image" bson:"image"`
+	Price       string             `json:"price" bson:"price"`
+	Source      string             `json:"source" bson:"source"`
+	Category    string             `json:"category" bson:"category"`
+	CreatedAt   time.Time          `json:"created_at" bson:"created_at"`
 }
 
 var collection *mongo.Collection
@@ -177,9 +179,16 @@ func getItemByID(c *gin.Context) {
 	defer cancel()
 
 	id := c.Param("id")
-	var item Item
 
-	err := collection.FindOne(ctx, bson.M{"_id": id}).Decode(&item)
+	// 유효한 ObjectID인지 확인
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "유효하지 않은 ID 형식입니다"})
+		return
+	}
+
+	var item Item
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&item)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "아이템을 찾을 수 없습니다"})
 		return

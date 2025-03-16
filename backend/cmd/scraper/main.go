@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,21 +10,44 @@ import (
 
 	"github.com/gocolly/colly/v2"
 	"github.com/gocolly/colly/v2/extensions"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // Item 구조체는 수집된 데이터를 저장합니다
 type Item struct {
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	URL         string    `json:"url"`
-	Image       string    `json:"image"`
-	Price       string    `json:"price"`
-	Source      string    `json:"source"`
-	Category    string    `json:"category"`
-	CreatedAt   time.Time `json:"created_at"`
+	Title       string    `json:"title" bson:"title"`
+	Description string    `json:"description" bson:"description"`
+	URL         string    `json:"url" bson:"url"`
+	Image       string    `json:"image" bson:"image"`
+	Price       string    `json:"price" bson:"price"`
+	Source      string    `json:"source" bson:"source"`
+	Category    string    `json:"category" bson:"category"`
+	CreatedAt   time.Time `json:"created_at" bson:"created_at"`
 }
 
 func main() {
+	// MongoDB 연결
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		log.Fatal("MongoDB 연결 오류:", err)
+	}
+	defer client.Disconnect(ctx)
+
+	// 연결 확인
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatal("MongoDB 핑 오류:", err)
+	}
+	fmt.Println("MongoDB에 연결되었습니다")
+
+	// 데이터 베이스 및 컬렉션 설정
+	collection := client.Database("aggregator").Collection("items")
+
 	// 데이터를 저장할 슬라이스
 	var items []Item
 
@@ -99,7 +123,28 @@ func main() {
 	fmt.Println("스크래핑 시작...")
 	c.Visit("https://quotes.toscrape.com/")
 
-	// 결과를 JSON 파일로 저장
+	// MongoDB에 데이터 저장
+	if len(items) > 0 {
+		// 기존 데이터 삭제 (선택 사항)
+		_, err := collection.DeleteMany(ctx, bson.M{})
+		if err != nil {
+			log.Printf("기존 데이터 삭제 중 오류: %s", err)
+		}
+
+		// 새 데이터 삽입
+		var documents []interface{}
+		for _, item := range items {
+			documents = append(documents, item)
+		}
+
+		insertResult, err := collection.InsertMany(ctx, documents)
+		if err != nil {
+			log.Fatalf("데이터 삽입 오류: %s", err)
+		}
+		fmt.Printf("MongoDB에 저장 완료! 총 %d개 문서 삽입\n", len(insertResult.InsertedIDs))
+	}
+
+	// 결과를 JSON 파일로도 저장 (백업용)
 	writeItemsToJSON(items, "quotes.json")
 	fmt.Printf("스크래핑 완료! 총 %d개 인용구 수집\n", len(items))
 }
